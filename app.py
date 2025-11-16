@@ -5,51 +5,57 @@ import joblib
 from datetime import datetime
 import matplotlib.pyplot as plt
 
+# -------------------- PAGE CONFIG ----------------------
+st.set_page_config(
+    page_title="EV Forecast",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-st.set_page_config(page_title="EV Forecast", layout="wide")
-
-
+# -------------------- LOAD MODEL -----------------------
 model = joblib.load('forecasting_ev_model.pkl')
 
-
+# -------------------- GLOBAL STYLE (DARK DASHBOARD) ----------------------
 st.markdown("""
     <style>
-        body {
-            background-color: #fcf7f7;
-            color: #000000;
-        }
         .stApp {
-            background: linear-gradient(to right, #c2d3f2, #7f848a);
+            background-color: #0e1117;
+            color: #FFFFFF;
+        }
+        .main-title {
+            font-size: 38px;
+            font-weight: 800;
+            text-align: center;
+            margin-top: 10px;
+            color: #FFFFFF;
+        }
+        .sub-title {
+            font-size: 20px;
+            text-align: center;
+            color: #c7c7c7;
+            margin-bottom: 25px;
+        }
+        .card {
+            background-color: #161a23;
+            padding: 20px;
+            border-radius: 14px;
+            box-shadow: 0px 0px 10px rgba(0,0,0,0.5);
+            margin-bottom: 25px;
         }
     </style>
 """, unsafe_allow_html=True)
 
+# -------------------- HEADER --------------------------
+st.markdown(
+    "<div class='main-title'>🔮 EV Adoption Forecaster for a County in Washington State</div>",
+    unsafe_allow_html=True
+)
+st.markdown(
+    "<div class='sub-title'>Forecast EV adoption trends for the next 3 years at the county level.</div>",
+    unsafe_allow_html=True
+)
 
-st.markdown("""
-    <div style='text-align: center; font-size: 36px; font-weight: bold; color: #FFFFFF; margin-top: 20px;'>
-        🔮 EV Adoption Forecaster for a County in Washington State
-    </div>
-""", unsafe_allow_html=True)
-
-
-st.markdown("""
-    <div style='text-align: center; font-size: 22px; font-weight: bold; padding-top: 10px; margin-bottom: 25px; color: #FFFFFF;'>
-        Welcome to the Electric Vehicle (EV) Adoption Forecast tool.
-    </div>
-""", unsafe_allow_html=True)
-
-
-st.image("be6.png", use_container_width=True)
-
-
-st.markdown("""
-    <div style='text-align: left; font-size: 22px; padding-top: 10px; color: #FFFFFF;'>
-        Select a county and see the forecasted EV adoption trend for the next 3 years.
-    </div>
-""", unsafe_allow_html=True)
-
-
-
+# -------------------- LOAD DATA ------------------------
 @st.cache_data
 def load_data():
     df = pd.read_csv("preprocessed_ev_data.csv")
@@ -58,17 +64,25 @@ def load_data():
 
 df = load_data()
 
-
 county_list = sorted(df['County'].dropna().unique().tolist())
-county = st.selectbox("Select a County", county_list)
 
+# -------------------- SIDEBAR --------------------------
+with st.sidebar:
+    st.header("⚙️ Configuration")
+    county = st.selectbox("Select a County", county_list)
+    st.markdown("---")
+    st.image("be6.png", use_container_width=True)
+    st.markdown("---")
+    st.caption("Prepared for the AICTE Internship Cycle 2 by S4F")
+
+# -------------------- VALIDATION -----------------------
 if county not in df['County'].unique():
     st.warning(f"County '{county}' not found in dataset.")
     st.stop()
 
+# -------------------- FORECASTING LOGIC (UNCHANGED) ---------------------
 county_df = df[df['County'] == county].sort_values("Date")
 county_code = county_df['county_encoded'].iloc[0]
-
 
 historical_ev = list(county_df['Electric Vehicle (EV) Total'].values[-6:])
 cumulative_ev = list(np.cumsum(historical_ev))
@@ -111,7 +125,7 @@ for i in range(1, forecast_horizon + 1):
     if len(cumulative_ev) > 6:
         cumulative_ev.pop(0)
 
-
+# -------------------- COMBINE HISTORICAL + FORECAST ---------------------
 historical_cum = county_df[['Date', 'Electric Vehicle (EV) Total']].copy()
 historical_cum['Source'] = 'Historical'
 historical_cum['Cumulative EV'] = historical_cum['Electric Vehicle (EV) Total'].cumsum()
@@ -120,14 +134,29 @@ forecast_df = pd.DataFrame(future_rows)
 forecast_df['Source'] = 'Forecast'
 forecast_df['Cumulative EV'] = forecast_df['Predicted EV Total'].cumsum() + historical_cum['Cumulative EV'].iloc[-1]
 
-
 combined = pd.concat([
     historical_cum[['Date', 'Cumulative EV', 'Source']],
     forecast_df[['Date', 'Cumulative EV', 'Source']]
 ], ignore_index=True)
 
+# -------------------- METRICS (USES EXISTING VALUES) --------------------
+historical_total = historical_cum['Cumulative EV'].iloc[-1]
+forecasted_total = forecast_df['Cumulative EV'].iloc[-1]
 
+if historical_total > 0:
+    forecast_growth_pct = ((forecasted_total - historical_total) / historical_total) * 100
+else:
+    forecast_growth_pct = 0.0
+
+m1, m2, m3 = st.columns(3)
+m1.metric("Current Cumulative EVs", f"{historical_total:,}")
+m2.metric("Forecasted Cumulative EVs", f"{forecasted_total:,}")
+m3.metric("3-Year Growth (%)", f"{forecast_growth_pct:.2f}%")
+
+# -------------------- MAIN FORECAST PLOT ----------------
+st.markdown("<div class='card'>", unsafe_allow_html=True)
 st.subheader(f"📊 Cumulative EV Forecast for {county} County")
+
 fig, ax = plt.subplots(figsize=(12, 6))
 for label, data in combined.groupby('Source'):
     ax.plot(data['Date'], data['Cumulative EV'], label=label, marker='o')
@@ -140,24 +169,22 @@ fig.patch.set_facecolor('#1c1c1c')
 ax.tick_params(colors='white')
 ax.legend()
 st.pyplot(fig)
+st.markdown("</div>", unsafe_allow_html=True)
 
-
-historical_total = historical_cum['Cumulative EV'].iloc[-1]
-forecasted_total = forecast_df['Cumulative EV'].iloc[-1]
-
+# -------------------- TEXT SUMMARY (UNCHANGED LOGIC) --------------------
 if historical_total > 0:
-    forecast_growth_pct = ((forecasted_total - historical_total) / historical_total) * 100
     trend = "increase 📈" if forecast_growth_pct > 0 else "decrease 📉"
-    st.success(f"Based on the graph, EV adoption in **{county}** is expected to show a **{trend} of {forecast_growth_pct:.2f}%** over the next 3 years.")
+    st.success(
+        f"Based on the graph, EV adoption in **{county}** is expected to show a **{trend} of {forecast_growth_pct:.2f}%** over the next 3 years."
+    )
 else:
     st.warning("Historical EV total is zero, so percentage forecast change can't be computed.")
 
-
+# -------------------- MULTI-COUNTY COMPARISON (SAME LOGIC, NICER WRAP) ----------------
 st.markdown("---")
 st.header("Compare EV Adoption Trends for up to 3 Counties")
 
 multi_counties = st.multiselect("Select up to 3 counties to compare", county_list, max_selections=3)
-
 
 if multi_counties:
     comparison_data = []
@@ -220,6 +247,7 @@ if multi_counties:
 
     comp_df = pd.concat(comparison_data, ignore_index=True)
 
+    st.markdown("<div class='card'>", unsafe_allow_html=True)
     st.subheader("📈 Comparison of Cumulative EV Adoption Trends")
     fig, ax = plt.subplots(figsize=(14, 7))
     for cty, group in comp_df.groupby('County'):
@@ -233,15 +261,16 @@ if multi_counties:
     ax.tick_params(colors='white')
     ax.legend(title="County")
     st.pyplot(fig)
+    st.markdown("</div>", unsafe_allow_html=True)
     
     growth_summaries = []
     for cty in multi_counties:
         cty_df = comp_df[comp_df['County'] == cty].reset_index(drop=True)
-        historical_total = cty_df['Cumulative EV'].iloc[len(cty_df) - forecast_horizon - 1]
-        forecasted_total = cty_df['Cumulative EV'].iloc[-1]
+        historical_total_cty = cty_df['Cumulative EV'].iloc[len(cty_df) - forecast_horizon - 1]
+        forecasted_total_cty = cty_df['Cumulative EV'].iloc[-1]
 
-        if historical_total > 0:
-            growth_pct = ((forecasted_total - historical_total) / historical_total) * 100
+        if historical_total_cty > 0:
+            growth_pct = ((forecasted_total_cty - historical_total_cty) / historical_total_cty) * 100
             growth_summaries.append(f"{cty}: {growth_pct:.2f}%")
         else:
             growth_summaries.append(f"{cty}: N/A (no historical data)")
@@ -249,6 +278,4 @@ if multi_counties:
     growth_sentence = " | ".join(growth_summaries)
     st.success(f"Forecasted EV adoption growth over next 3 years — {growth_sentence}")
 
-st.success("Forecast complete")
-
-st.markdown("Prepared for the **AICTE Internship Cycle 2 by S4F**")
+st.success("Forecast complete ✅")
