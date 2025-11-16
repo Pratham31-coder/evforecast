@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import joblib
-from datetime import datetime
 import matplotlib.pyplot as plt
 
 # -------------------- PAGE CONFIG ----------------------
@@ -47,11 +46,6 @@ st.markdown("""
     box-shadow: 0px 0px 10px rgba(255,255,255,0.05);
     margin-bottom: 20px;
 }
-
-/* Text inside dropdowns */
-.css-16idsys p {
-    font-size: 18px !important;
-}
 </style>
 """, unsafe_allow_html=True)
 
@@ -73,15 +67,15 @@ df = load_data()
 
 county_list = sorted(df['County'].unique())
 
-# -------------------- LAYOUT: SIDEBAR ---------------------
+# -------------------- SIDEBAR ---------------------
 with st.sidebar:
     st.header("⚙️ Select County")
     county = st.selectbox("Choose a County", county_list)
     st.image("be6.png")
     st.markdown("---")
-    st.caption("Designed for the AICTE Internship Cycle 2")
+    st.caption("Designed for AICTE Internship Cycle 2")
 
-# -------------------- ORIGINAL FORECAST LOGIC (UNCHANGED) ---------------------
+# -------------------- FORECAST LOGIC (UNCHANGED) ---------------------
 county_df = df[df['County'] == county].sort_values("Date")
 county_code = county_df['county_encoded'].iloc[0]
 
@@ -126,33 +120,45 @@ for i in range(1, forecast_horizon + 1):
     if len(cumulative_ev) > 6:
         cumulative_ev.pop(0)
 
+# Build forecast dataframe
 forecast_df = pd.DataFrame(future_rows)
-forecast_df['Cumulative EV'] = forecast_df['Predicted EV Total'].cumsum() + cumulative_ev[-1]
+forecast_df['Cumulative EV'] = forecast_df['Predicted EV Total'].cumsum() + county_df['Electric Vehicle (EV) Total'].cumsum().iloc[-1]
 
 # -------------------- METRICS ---------------------
-latest_historical_ev = cumulative_ev[-1]
-latest_forecast_ev = forecast_df['Cumulative EV'].iloc[-1]
-
-growth_pct = ((latest_forecast_ev - latest_historical_ev) / latest_historical_ev) * 100
+historical_total = county_df['Electric Vehicle (EV) Total'].cumsum().iloc[-1]
+forecast_total = forecast_df['Cumulative EV'].iloc[-1]
+growth_pct = ((forecast_total - historical_total) / historical_total) * 100
 
 col1, col2, col3 = st.columns(3)
-col1.metric("Current EV Count", f"{latest_historical_ev:,}")
-col2.metric("Forecasted EV (3 yrs)", f"{latest_forecast_ev:,}")
+col1.metric("Current EV Count", f"{historical_total:,}")
+col2.metric("Forecasted EV (3 yrs)", f"{forecast_total:,}")
 col3.metric("Growth %", f"{growth_pct:.2f}%")
 
-# -------------------- GRAPH SECTION ---------------------
+# -------------------- FIXED GRAPH SECTION ---------------------
 st.markdown("<div class='card'>", unsafe_allow_html=True)
 st.subheader(f"📈 Cumulative EV Forecast for {county}")
 
+# build historical cumulative
+historical_df = county_df[['Date', 'Electric Vehicle (EV) Total']].copy()
+historical_df['Cumulative EV'] = historical_df['Electric Vehicle (EV) Total'].cumsum()
+
+# forecast cumulative
+forecast_df_plot = forecast_df[['Date', 'Cumulative EV']]
+
+# combine
+combined_df = pd.concat([historical_df[['Date', 'Cumulative EV']], forecast_df_plot], ignore_index=True)
+
 fig, ax = plt.subplots(figsize=(12, 6))
-ax.plot(pd.concat([county_df['Date'], forecast_df['Date']]),
-        pd.concat([pd.Series(cumulative_ev), forecast_df['Cumulative EV']]),
-        color="#4DB6AC",
-        marker='o')
+ax.plot(combined_df['Date'], combined_df['Cumulative EV'], 
+        color="#4DB6AC", marker='o')
 
 ax.set_facecolor("#0e1117")
 fig.patch.set_facecolor("#0e1117")
 ax.grid(True, alpha=0.2)
+ax.set_xlabel("Date", color="white")
+ax.set_ylabel("Cumulative EV Count", color="white")
+ax.tick_params(colors='white')
+
 st.pyplot(fig)
 st.markdown("</div>", unsafe_allow_html=True)
 
